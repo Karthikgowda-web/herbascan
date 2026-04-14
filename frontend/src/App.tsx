@@ -8,6 +8,8 @@ import { identifyPlant, suggestPlantsByIllness, type IdentificationResult, type 
 import { savePlantToLibrary, getSavedPlants, type SavedPlant } from './services/databaseService';
 import { cn } from './lib/utils';
 
+
+
 type TabType = 'overview' | 'remedies' | 'alternatives' | 'cnn';
 type ModeType = 'identify' | 'search' | 'library';
 
@@ -42,11 +44,21 @@ export default function App() {
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [loadingFactIndex, setLoadingFactIndex] = useState(0);
   const [librarySearch, setLibrarySearch] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi' | 'kn'>('en');
+
+  const [toastMsg, setToastMsg] = useState<{ message: string, visible: boolean }>({ message: '', visible: false });
+
+  const showToast = (message: string) => {
+    setToastMsg({ message, visible: true });
+    setTimeout(() => {
+      setToastMsg(prev => ({ ...prev, visible: false }));
+    }, 3000);
+  };
 
   const filteredLibrary = savedPlants.filter(plant => 
-    plant.name.toLowerCase().includes(librarySearch.toLowerCase()) ||
-    plant.scientificName.toLowerCase().includes(librarySearch.toLowerCase()) ||
-    plant.description.toLowerCase().includes(librarySearch.toLowerCase())
+    (plant.plant_name || plant.name || '').toLowerCase().includes(librarySearch.toLowerCase()) ||
+    (plant.scientific_name || (plant as any).scientificName || '').toLowerCase().includes(librarySearch.toLowerCase()) ||
+    (plant.overview?.[selectedLanguage] || (plant as any).description || '').toLowerCase().includes(librarySearch.toLowerCase())
   );
 
   useEffect(() => {
@@ -67,13 +79,14 @@ export default function App() {
     setTimeout(() => setCopyingIndex(null), 2000);
   };
 
-  const handleSaveToLibrary = async () => {
+  const handleArchive = async () => {
     if (!result || !image || isSaving) return;
     setIsSaving(true);
     try {
       await savePlantToLibrary(result, image);
       setIsSaved(true);
-      // Refresh library if we're in library mode
+      showToast("Successfully archived to library!");
+      
       if (mode === 'library') fetchLibrary();
     } catch (err) {
       setError("Failed to save to library. Please try again.");
@@ -95,11 +108,23 @@ export default function App() {
     }
   };
 
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
   useEffect(() => {
     if (mode === 'library') {
       fetchLibrary();
     }
   }, [mode]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -158,6 +183,7 @@ export default function App() {
     try {
       const data = await identifyPlant(image);
       setResult(data);
+      setIsSaved(false); 
     } catch (err) {
       setError("Failed to identify plant. Please try a clearer photo.");
       console.error(err);
@@ -168,6 +194,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const resultRef = useRef<HTMLDivElement>(null);
+  const pdfRef = useRef<HTMLDivElement>(null);
 
   const reset = () => {
     setImage(null);
@@ -199,16 +226,16 @@ export default function App() {
 
   const [isExporting, setIsExporting] = useState<'pdf' | 'jpg' | null>(null);
 
-  const exportAsPDF = async () => {
-    if (!resultRef.current || isExporting) return;
+  const handleDownloadPDF = async () => {
+    if (!pdfRef.current || isExporting) return;
     setIsExporting('pdf');
     setError(null);
     try {
-      const canvas = await html2canvas(resultRef.current, { 
+      const canvas = await html2canvas(pdfRef.current, { 
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#f9fafb' // sage-50 color
+        backgroundColor: '#f9fafb' 
       });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
@@ -216,10 +243,10 @@ export default function App() {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
       
-      // If content is longer than one page, we might need multiple pages, 
-      // but for now let's just ensure it fits or scales.
+      
+      
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${result?.name || 'herbal-report'}.pdf`);
+      pdf.save(`${result?.name || (result as any)?.plant_name || 'herbal-report'}.pdf`);
     } catch (err) {
       console.error("PDF Export Error:", err);
       setError("Failed to generate PDF. Please try again.");
@@ -228,7 +255,7 @@ export default function App() {
     }
   };
 
-  const exportAsJPG = async () => {
+  const handleDownloadJPG = async () => {
     if (!resultRef.current || isExporting) return;
     setIsExporting('jpg');
     setError(null);
@@ -240,7 +267,7 @@ export default function App() {
         backgroundColor: '#f9fafb'
       });
       const link = document.createElement('a');
-      link.download = `${result?.name || 'herbal-report'}.jpg`;
+      link.download = `${result?.name || (result as any)?.plant_name || 'herbal-report'}.jpg`;
       link.href = canvas.toDataURL('image/jpeg', 0.9);
       link.click();
     } catch (err) {
@@ -253,13 +280,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-sage-50 pb-12 relative overflow-hidden perspective-1000">
-      {/* Atmospheric Background */}
+      {}
+      <AnimatePresence>
+        {toastMsg.visible && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: '-50%' }}
+            animate={{ opacity: 1, y: 32, x: '-50%' }}
+            exit={{ opacity: 0, y: -50, x: '-50%' }}
+            className="fixed top-0 left-1/2 z-50 flex items-center gap-3 bg-sage-900 text-white px-6 py-4 rounded-2xl shadow-2xl shadow-sage-900/20"
+          >
+            <BookmarkCheck className="w-5 h-5 text-sage-300" />
+            <span className="font-medium text-sm">{toastMsg.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-sage-200/30 blur-[120px] rounded-full animate-float" />
         <div className="absolute top-[20%] -right-[5%] w-[30%] h-[30%] bg-sage-300/20 blur-[100px] rounded-full animate-float [animation-delay:2s]" />
         <div className="absolute -bottom-[10%] left-[20%] w-[50%] h-[50%] bg-sage-200/40 blur-[150px] rounded-full animate-float [animation-delay:4s]" />
         
-        {/* Floating Botanical Elements with 3D feel */}
+        {}
         <motion.div 
           animate={{ 
             y: [0, -40, 0],
@@ -284,7 +326,7 @@ export default function App() {
         </motion.div>
       </div>
 
-      {/* Header */}
+      {}
       <header className="relative bg-white/80 backdrop-blur-md border-b border-sage-200/50 py-8 px-4 sticky top-0 z-30">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -319,18 +361,35 @@ export default function App() {
                 )}
               >
                 {m === 'identify' && <Camera className="w-3.5 h-3.5" />}
-                {m === 'search' && <Leaf className="w-3.5 h-3.5" />}
-                {m === 'library' && <LayoutGrid className="w-3.5 h-3.5" />}
+                {m === 'search' && <Bookmark className="w-3.5 h-3.5" />}
+                {m === 'library' && <BookmarkCheck className="w-3.5 h-3.5" />}
                 {m}
               </button>
             ))}
+            
+            {deferredPrompt && (
+              <button
+                onClick={() => {
+                  deferredPrompt.prompt();
+                  deferredPrompt.userChoice.then((choiceResult: any) => {
+                    if (choiceResult.outcome === 'accepted') {
+                      setDeferredPrompt(null);
+                    }
+                  });
+                }}
+                className="px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 bg-sage-900 text-white shadow-sm ring-1 ring-sage-900 hover:bg-sage-800"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Install App
+              </button>
+            )}
           </nav>
         </div>
       </header>
 
       <main className="relative max-w-5xl mx-auto px-4 mt-12">
         <div className={cn("grid gap-12", mode === 'library' ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-12")}>
-          {/* Left Column: Input */}
+          {}
           <section className={cn("lg:col-span-5 space-y-8", mode === 'library' && "hidden")}>
             <AnimatePresence mode="wait">
               {mode === 'identify' ? (
@@ -368,76 +427,35 @@ export default function App() {
                             type="file" 
                             ref={fileInputRef} 
                             onChange={handleFileUpload} 
-                            accept="image/*" 
-                            className="hidden" 
+                            accept="image/*"
+                            className="hidden"
                           />
                         </motion.button>
-                        
-                        <div className="flex items-center gap-4">
-                          <div className="h-px flex-1 bg-sage-100" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-sage-300">Or</span>
-                          <div className="h-px flex-1 bg-sage-100" />
-                        </div>
 
                         <motion.button 
                           whileHover={{ scale: 1.02, translateZ: 20 }}
                           whileTap={{ scale: 0.98 }}
                           onClick={startCamera}
-                          className="w-full py-5 bg-sage-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-black transition-all shadow-xl shadow-sage-900/20"
+                          className="w-full py-5 bg-sage-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-sage-900/20"
                         >
                           <Camera className="w-5 h-5" />
                           Open Camera
                         </motion.button>
                       </div>
-                    ) : isCameraOpen ? (
-                      <div className="relative rounded-[2rem] overflow-hidden bg-black aspect-[4/3] shadow-2xl">
-                        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 border-[12px] border-white/10 pointer-events-none" />
-                        <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-6">
-                          <motion.button 
-                            whileTap={{ scale: 0.9 }}
-                            onClick={capturePhoto}
-                            className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-2xl"
-                          >
-                            <div className="w-12 h-12 border-4 border-sage-900 rounded-full" />
-                          </motion.button>
-                          <motion.button 
-                            whileTap={{ scale: 0.9 }}
-                            onClick={stopCamera}
-                            className="w-16 h-16 bg-white/20 backdrop-blur-md text-white rounded-full flex items-center justify-center shadow-2xl hover:bg-white/30 transition-colors"
-                          >
-                            <X className="w-6 h-6" />
-                          </motion.button>
-                        </div>
-                        <canvas ref={canvasRef} className="hidden" />
-                      </div>
-                    ) : (
+                    ) : image && !isCameraOpen ? (
                       <div className="space-y-6">
-                        <div className="relative rounded-[2rem] overflow-hidden aspect-[4/3] shadow-2xl group/preview">
-                          <img src={image!} alt="Selected plant" className={cn("w-full h-full object-cover transition-all duration-500", isIdentifying && "brightness-50 grayscale-[0.5]")} />
-                          
-                          {isIdentifying && (
-                            <div className="absolute inset-0 pointer-events-none">
-                              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-sage-400/30 to-transparent h-1/4 w-full animate-scan" />
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="w-full h-px bg-sage-400/50 shadow-[0_0_15px_rgba(122,156,122,0.5)] animate-scan" />
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/preview:opacity-100 transition-opacity" />
-                          <motion.button 
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
+                        <div className="relative aspect-[4/3] rounded-[2rem] overflow-hidden shadow-2xl group/preview preserve-3d">
+                          <img src={image} alt="Specimen" className="w-full h-full object-cover" />
+                          <button 
                             onClick={reset}
-                            className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md text-sage-900 rounded-full flex items-center justify-center shadow-lg"
+                            className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all opacity-0 group-hover/preview:opacity-100"
                           >
                             <X className="w-5 h-5" />
-                          </motion.button>
+                          </button>
                         </div>
                         
                         <motion.button 
-                          whileHover={{ scale: 1.02, translateZ: 20 }}
+                          whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
                           onClick={handleIdentify}
                           disabled={isIdentifying}
@@ -457,6 +475,27 @@ export default function App() {
                               Identify Specimen
                             </>
                           )}
+                        </motion.button>
+                      </div>
+                    ) : isCameraOpen && (
+                      <div className="space-y-6">
+                        <div className="relative aspect-[4/3] bg-black rounded-[2rem] overflow-hidden shadow-2xl">
+                          <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                          <button 
+                            onClick={stopCamera}
+                            className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+                        <motion.button 
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={capturePhoto}
+                          className="w-full py-5 bg-sage-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl"
+                        >
+                          <Camera className="w-5 h-5" />
+                          Capture Photo
                         </motion.button>
                       </div>
                     )}
@@ -516,36 +555,7 @@ export default function App() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {error && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-sm flex items-start gap-3"
-              >
-                <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-                <p className="font-medium">{error}</p>
-              </motion.div>
-            )}
-
-            <motion.div 
-              whileHover={{ rotateY: 5, rotateX: -2, z: 10 }}
-              className="bg-sage-900/5 p-8 rounded-[2rem] border border-sage-900/5 preserve-3d"
-            >
-              <h3 className="text-xs font-black uppercase tracking-[0.2em] text-sage-900 flex items-center gap-2 mb-4">
-                <Info className="w-4 h-4" />
-                Methodology
-              </h3>
-              <p className="text-sm text-sage-600 leading-relaxed font-medium">
-                {mode === 'identify' 
-                  ? "Our botanical intelligence engine analyzes visual markers—leaf venation, phyllotaxy, and floral structure—to provide precise identification and traditional medicinal context."
-                  : "We cross-reference your symptoms with centuries of ethnobotanical records to suggest the most effective and safe herbal interventions."
-                }
-              </p>
-            </motion.div>
           </section>
-
-          {/* Right Column: Results / Library */}
           <section className={cn("relative", mode === 'library' ? "w-full" : "lg:col-span-7")}>
             <AnimatePresence mode="wait">
               {mode === 'library' ? (
@@ -611,7 +621,7 @@ export default function App() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       {filteredLibrary.map((plant, idx) => (
                         <motion.div 
-                          key={plant.id} 
+                          key={plant._id || plant.id} 
                           initial={{ opacity: 0, scale: 0.9, rotateY: -15 }}
                           animate={{ opacity: 1, scale: 1, rotateY: 0 }}
                           whileHover={{ 
@@ -628,23 +638,30 @@ export default function App() {
                           }}
                           className="bg-white rounded-[2.5rem] overflow-hidden shadow-xl shadow-sage-900/5 border border-sage-100 hover:shadow-sage-900/10 transition-all cursor-pointer group preserve-3d"
                           onClick={() => {
-                            setResult(plant);
-                            setImage(plant.imageUrl);
-                            setMode('identify');
-                            setIsSaved(true);
+                            
+                            if (plant.overview) {
+                              setResult(plant);
+                              setImage(plant.image_url || plant.imageUrl);
+                              setMode('identify');
+                              setIsSaved(true);
+                            } else {
+                              showToast("Detailed information was not saved for this specimen.");
+                            }
                           }}
                         >
                           <div className="aspect-[4/3] relative overflow-hidden">
-                            <img src={plant.imageUrl} alt={plant.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                            <img src={plant.image_url || plant.imageUrl} alt={plant.plant_name || plant.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                             <div className="absolute inset-0 bg-gradient-to-t from-sage-900/80 via-sage-900/20 to-transparent flex items-end p-8">
                               <div>
-                                <h3 className="text-white text-2xl font-serif font-bold leading-tight">{plant.name}</h3>
-                                <p className="text-sage-200 text-xs italic mt-1 font-medium">{plant.scientificName}</p>
+                                <h3 className="text-white text-2xl font-serif font-bold leading-tight">{plant.plant_name || plant.name}</h3>
+                                <p className="text-sage-200 text-xs italic mt-1 font-medium">{plant.scientific_name || (plant as any).scientificName || 'Medicinal Species'}</p>
                               </div>
                             </div>
                           </div>
-                          <div className="p-8">
-                            <p className="text-sage-600 text-sm line-clamp-2 leading-relaxed font-medium">{plant.description}</p>
+                            <div className="p-8">
+                              <p className="text-sage-600 text-sm line-clamp-2 leading-relaxed font-medium">
+                                {plant.overview?.[selectedLanguage] || (plant as any).description || 'Medicinal details available in full view.'}
+                              </p>
                             <div className="mt-6 flex items-center text-[10px] font-black uppercase tracking-widest text-sage-400 group-hover:text-sage-900 transition-colors">
                               View Details <Share2 className="w-3 h-3 ml-2" />
                             </div>
@@ -762,8 +779,10 @@ export default function App() {
                                 <div className="h-px flex-1 bg-white/10" />
                               </div>
                               <h4 className="text-4xl font-serif font-bold text-white tracking-tight group-hover:text-sage-300 transition-colors">{plant.name}</h4>
-                              <p className="text-sage-400 italic font-serif text-xl">{plant.scientificName}</p>
-                              <p className="text-sage-200 font-medium leading-relaxed text-lg">{plant.description}</p>
+                              <p className="text-sage-400 italic font-serif text-xl">{(plant as any).scientific_name || plant.scientificName}</p>
+                              <p className="text-sage-200 font-medium leading-relaxed text-lg">
+                                {(plant as any).overview?.[selectedLanguage] || plant.description}
+                              </p>
                             </div>
                           </div>
                           
@@ -794,7 +813,7 @@ export default function App() {
                   transition={{ type: "spring", stiffness: 100, damping: 20 }}
                   className="space-y-8 preserve-3d"
                 >
-                  {/* Tabs Navigation */}
+                  {}
                   <div className="flex p-1.5 bg-white/50 backdrop-blur-md rounded-2xl border border-sage-200 shadow-sm">
                     {(['overview', 'remedies', 'alternatives', 'cnn'] as TabType[]).map((tab) => (
                       <button
@@ -812,6 +831,26 @@ export default function App() {
                     ))}
                   </div>
 
+                  {}
+                  <div className="flex justify-center mt-6">
+                    <div className="inline-flex p-1 bg-white/50 backdrop-blur-md rounded-xl border border-sage-200 shadow-sm gap-1">
+                      {(['en', 'hi', 'kn'] as const).map((lang) => (
+                        <button
+                          key={lang}
+                          onClick={() => setSelectedLanguage(lang)}
+                          className={cn(
+                            "px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all",
+                            selectedLanguage === lang 
+                              ? "bg-sage-900 text-white shadow-md" 
+                              : "text-sage-400 hover:text-sage-600 hover:bg-white/50"
+                          )}
+                        >
+                          {lang === 'en' ? 'EN' : lang === 'hi' ? 'HI' : 'KN'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div ref={resultRef} className="space-y-8">
                     <AnimatePresence mode="wait">
                       {activeTab === 'overview' && (
@@ -822,23 +861,25 @@ export default function App() {
                           exit={{ opacity: 0, y: -10 }}
                           className="space-y-8"
                         >
-                          {/* Main Info Card - Dark Theme Variant */}
+                          {}
                           <div className="bg-sage-950 p-10 rounded-[3rem] shadow-2xl shadow-black/40 border border-sage-800 relative overflow-hidden text-white">
                             <div className="absolute top-0 right-0 w-48 h-48 bg-sage-900/50 rounded-bl-[6rem] -mr-12 -mt-12" />
                             
                             <div className="relative">
                               <div className="mb-10">
                                 <span className="text-[10px] font-black uppercase tracking-[0.3em] text-sage-400 mb-2 block">Botanical Classification</span>
-                                <h2 className="text-5xl font-serif font-bold text-white leading-tight">{result.name}</h2>
-                                <p className="text-sage-300 italic font-serif text-2xl mt-1">{result.scientificName}</p>
+                                <h2 className="text-5xl font-serif font-bold text-white leading-tight">{(result?.name || (result as any)?.plant_name)?.replace(/_/g, ' ') || 'Searching...'}</h2>
+                                <p className="text-sage-300 italic font-serif text-2xl mt-1">{result?.scientific_name || ''}</p>
                               </div>
                               
                               <div className="text-sage-100 text-lg leading-relaxed mb-10 prose prose-invert prose-sage max-w-none font-medium">
-                                <ReactMarkdown>{result.description}</ReactMarkdown>
+                                <ReactMarkdown>
+                                  {result?.overview?.[selectedLanguage] || ''}
+                                </ReactMarkdown>
                               </div>
 
                               <div className="flex flex-wrap gap-3">
-                                {result.medicinalProperties.map((prop, i) => (
+                                {result?.medicinalProperties?.map((prop, i) => (
                                   <span key={i} className="px-4 py-2 bg-white/10 text-white rounded-xl text-xs font-bold border border-white/10 backdrop-blur-sm">
                                     {prop}
                                   </span>
@@ -847,14 +888,14 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Warnings Card - Dark Theme Variant */}
+                          {}
                           <div className="bg-amber-950/30 backdrop-blur-md p-8 rounded-[2.5rem] border border-amber-900/30 shadow-lg shadow-black/20">
                             <h3 className="text-amber-400 font-black flex items-center gap-3 mb-4 text-[10px] uppercase tracking-[0.3em]">
                               <AlertTriangle className="w-5 h-5" />
                               Contraindications
                             </h3>
                             <p className="text-amber-100/80 font-medium leading-relaxed">
-                              {result.warnings}
+                              {result?.warnings || 'Consult a professional.'}
                             </p>
                           </div>
                         </motion.div>
@@ -863,7 +904,7 @@ export default function App() {
                       {activeTab === 'remedies' && (
                         <motion.div
                           key="remedies"
-                          initial={{ opacity: 0, y: 10 }}
+                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -10 }}
                           className="space-y-8"
@@ -876,45 +917,20 @@ export default function App() {
                               <h3 className="text-3xl font-serif font-bold text-white leading-none">Traditional Remedies</h3>
                             </div>
                             
-                            <div className="grid grid-cols-1 gap-12">
-                              {result.remedies.map((remedy, i) => (
-                                <div key={i} className="group">
-                                  <div className="flex items-center gap-4 mb-6">
-                                    <div className="h-px flex-1 bg-white/10" />
-                                    <h4 className="text-3xl font-serif font-bold text-white tracking-tight">{remedy.condition}</h4>
-                                    <div className="h-px flex-1 bg-white/10" />
-                                  </div>
-                                  
-                                  <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-                                    <div className="md:col-span-7 space-y-4">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-sage-400 block">Preparation Protocol</span>
-                                        <button 
-                                          onClick={() => copyToClipboard(remedy.preparation, i)}
-                                          className="text-[10px] font-bold uppercase tracking-widest text-sage-400 hover:text-white flex items-center gap-1.5 transition-colors"
-                                        >
-                                          {copyingIndex === i ? (
-                                            <>Copied <BookmarkCheck className="w-3 h-3" /></>
-                                          ) : (
-                                            <>Copy <Share2 className="w-3 h-3" /></>
-                                          )}
-                                        </button>
-                                      </div>
-                                      <div className="text-sage-100 font-medium leading-relaxed text-lg prose prose-invert prose-sage max-w-none prose-p:m-0">
-                                        <ReactMarkdown>{remedy.preparation}</ReactMarkdown>
-                                      </div>
-                                    </div>
-                                    <div className="md:col-span-5">
-                                      <div className="bg-white/5 text-white p-8 rounded-[2.5rem] border border-white/10 relative overflow-hidden h-full flex flex-col justify-center">
-                                        <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-bl-full -mr-8 -mt-8" />
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-sage-400 block mb-4">Expected Efficacy</span>
-                                        <p className="text-xl font-serif italic leading-relaxed">"{remedy.expectedOutcome}"</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                            {isIdentifying ? (
+                              <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                                <Loader2 className="w-10 h-10 animate-spin text-sage-400" />
+                                <p className="text-sage-400 font-medium">Synchronizing medical records...</p>
+                              </div>
+                            ) : result?.remedies?.[selectedLanguage] ? (
+                              <div className="text-sage-100 font-medium leading-relaxed text-lg prose prose-invert prose-sage max-w-none">
+                                <ReactMarkdown>{result.remedies[selectedLanguage]}</ReactMarkdown>
+                              </div>
+                            ) : (
+                              <div className="p-8 bg-white/5 rounded-2xl border border-white/10 text-center">
+                                <p className="text-sage-400">Remedy data is currently being verified by our botanical experts.</p>
+                              </div>
+                            )}
                           </div>
                         </motion.div>
                       )}
@@ -934,17 +950,16 @@ export default function App() {
                               </div>
                               <h3 className="text-3xl font-serif font-bold text-white leading-none">Phytotherapy Substitutes</h3>
                             </div>
-                            <p className="text-sage-400 font-medium mb-10">In instances where <span className="text-white font-bold">{result.name}</span> is unavailable, these taxa offer analogous therapeutic profiles:</p>
+                            <p className="text-sage-400 font-medium mb-10">In instances where <span className="text-white font-bold">{result.name || (result as any).plant_name}</span> is unavailable, these taxa offer analogous therapeutic profiles:</p>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                              {result.alternatives.map((alt, i) => (
+                              {(result?.alternatives?.[selectedLanguage] || []).map((alt, i) => (
                                 <motion.div 
                                   key={i} 
                                   whileHover={{ y: -5 }}
-                                  className="p-8 bg-white/5 rounded-[2.5rem] border border-white/10 hover:bg-white/10 transition-all"
+                                  className="p-8 bg-white/5 rounded-[2.5rem] border border-white/10 hover:bg-white/10 transition-all text-center"
                                 >
-                                  <h4 className="text-xl font-serif font-bold text-white mb-3">{alt.name}</h4>
-                                  <p className="text-sage-300 text-sm font-medium leading-relaxed">{alt.reason}</p>
+                                  <h4 className="text-xl font-serif font-bold text-white">{alt}</h4>
                                 </motion.div>
                               ))}
                             </div>
@@ -972,13 +987,13 @@ export default function App() {
                               <div className="p-8 bg-white/5 rounded-[2.5rem] border border-white/10">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-sage-400 block mb-4">CNN Confidence Score</span>
                                 <div className="flex items-end gap-2">
-                                  <span className="text-6xl font-serif font-bold text-white">{(result.cnnAnalysis.confidence * 100).toFixed(1)}</span>
+                                  <span className="text-6xl font-serif font-bold text-white">{((result?.cnnAnalysis?.confidence || 0) * 100).toFixed(1)}</span>
                                   <span className="text-sage-400 font-bold mb-2">%</span>
                                 </div>
                                 <div className="mt-6 h-2 bg-white/10 rounded-full overflow-hidden">
                                   <motion.div 
                                     initial={{ width: 0 }}
-                                    animate={{ width: `${result.cnnAnalysis.confidence * 100}%` }}
+                                    animate={{ width: `${(result?.cnnAnalysis?.confidence || 0) * 100}%` }}
                                     transition={{ duration: 1.5, ease: "easeOut" }}
                                     className="h-full bg-sage-400"
                                   />
@@ -988,7 +1003,7 @@ export default function App() {
                               <div className="p-8 bg-white/5 rounded-[2.5rem] border border-white/10">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-sage-400 block mb-4">Extracted Visual Markers</span>
                                 <div className="flex flex-wrap gap-2">
-                                  {result.cnnAnalysis.featuresIdentified.map((feature, i) => (
+                                  {(result?.cnnAnalysis?.featuresIdentified || ['Analyzing traits...']).map((feature, i) => (
                                     <span key={i} className="px-3 py-1.5 bg-white/10 rounded-lg text-[10px] font-bold uppercase tracking-wider text-sage-200 border border-white/5">
                                       {feature}
                                     </span>
@@ -1000,7 +1015,7 @@ export default function App() {
                             <div className="p-8 bg-white/5 rounded-[2.5rem] border border-white/10">
                               <span className="text-[10px] font-black uppercase tracking-widest text-sage-400 block mb-4">Neural Pattern Recognition</span>
                               <p className="text-sage-200 font-medium leading-relaxed italic">
-                                "{result.cnnAnalysis.neuralMarkers}"
+                                "{result?.cnnAnalysis?.neuralMarkers || 'Processing neural patterns...'}"
                               </p>
                             </div>
                           </div>
@@ -1008,30 +1023,43 @@ export default function App() {
                       )}
                     </AnimatePresence>
 
-                    {/* Export Actions */}
+                    {}
                     <div className="space-y-4 pt-4">
                       <motion.button 
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        onClick={handleSaveToLibrary}
+                        onClick={handleArchive}
                         disabled={isSaving || isSaved}
+                        type="button"
                         className={cn(
                           "w-full py-5 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl",
                           isSaved 
-                            ? "bg-white/10 text-white border border-white/10 backdrop-blur-md" 
-                            : "bg-white text-sage-900 hover:bg-sage-50 shadow-white/10"
+                            ? "bg-sage-200 text-sage-800 border-2 border-sage-300"
+                            : "bg-sage-900 text-white hover:bg-sage-800 border-2 border-transparent"
                         )}
                       >
-                        {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : isSaved ? <BookmarkCheck className="w-5 h-5" /> : <Bookmark className="w-5 h-5" />}
-                        {isSaving ? "Archiving..." : isSaved ? "Archived in Library" : "Archive to Library"}
+                        {isSaving ? (
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                        ) : isSaved ? (
+                          <>
+                             <BookmarkCheck className="w-6 h-6" />
+                             ✅ Saved to Library
+                          </>
+                        ) : (
+                          <>
+                            <Bookmark className="w-6 h-6" />
+                            Archive to Library
+                          </>
+                        )}
                       </motion.button>
                       
                       <div className="flex flex-col sm:flex-row gap-4">
                         <motion.button 
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
-                          onClick={exportAsPDF}
+                          onClick={handleDownloadPDF}
                           disabled={isExporting !== null}
+                          type="button"
                           className="flex-1 py-5 bg-sage-900/50 backdrop-blur-md border border-white/10 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-sage-900/80 transition-all shadow-lg shadow-black/20 disabled:opacity-50"
                         >
                           {isExporting === 'pdf' ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
@@ -1040,8 +1068,9 @@ export default function App() {
                         <motion.button 
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
-                          onClick={exportAsJPG}
+                          onClick={handleDownloadJPG}
                           disabled={isExporting !== null}
+                          type="button"
                           className="flex-1 py-5 bg-sage-900/50 backdrop-blur-md border border-white/10 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-sage-900/80 transition-all shadow-lg shadow-black/20 disabled:opacity-50"
                         >
                           {isExporting === 'jpg' ? <Loader2 className="w-5 h-5 animate-spin" /> : <ImageIcon className="w-5 h-5" />}
@@ -1060,6 +1089,75 @@ export default function App() {
           </section>
         </div>
       </main>
+
+      {}
+      {result && (
+        <div style={{ position: 'absolute', top: '-9999px', left: '-9999px' }}>
+          <div ref={pdfRef} className="w-[800px] bg-white p-12 relative overflow-hidden" style={{ color: '#1a1a1a', fontFamily: 'serif' }}>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-sage-50 rounded-bl-[8rem] -mr-16 -mt-16 opacity-50" />
+            <h1 className="text-5xl font-bold mb-2 text-sage-900 border-b-4 border-sage-200 pb-4 inline-block">HerbalHeal Report</h1>
+            
+            <div className="mt-8 flex gap-8">
+              {image && (
+                <div className="w-64 h-64 rounded-3xl overflow-hidden shrink-0 shadow-lg">
+                  <img src={image} alt="Specimen" className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div>
+                <span className="text-sm font-black uppercase tracking-[0.3em] text-sage-400 block mb-2">Botanical Classification</span>
+                <h2 className="text-4xl font-bold text-sage-900 mb-1">{(result.name || (result as any).plant_name || '').replace(/_/g, ' ')}</h2>
+                <p className="text-2xl text-sage-500 italic mb-6">{result.scientific_name}</p>
+                <div className="flex flex-wrap gap-2 mb-6">
+                  {result.medicinalProperties?.map((prop, i) => (
+                     <span key={i} className="px-3 py-1 bg-sage-100 text-sage-900 rounded-lg text-xs font-bold border border-sage-200">{prop}</span>
+                  ))}
+                </div>
+                <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200">
+                  <h3 className="text-amber-700 font-bold uppercase text-xs tracking-widest mb-2 flex items-center gap-2"><AlertTriangle className="w-4 h-4"/> Contraindications</h3>
+                  <p className="text-amber-900 text-sm leading-relaxed">{result.warnings}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-12 space-y-10">
+              <section>
+                <h3 className="text-2xl font-bold text-sage-900 mb-4 border-b border-sage-100 pb-2">Methodology & Overview</h3>
+                <div className="text-sage-800 leading-relaxed text-lg prose prose-sage max-w-none">
+                  <ReactMarkdown>{result.overview?.[selectedLanguage] || ''}</ReactMarkdown>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-2xl font-bold text-sage-900 mb-4 border-b border-sage-100 pb-2 flex items-center gap-2"><Leaf className="w-6 h-6"/> Traditional Remedies</h3>
+                <div className="text-sage-800 leading-relaxed text-lg prose prose-sage max-w-none bg-sage-50/50 p-6 rounded-3xl border border-sage-100">
+                  <ReactMarkdown>{result.remedies?.[selectedLanguage] || 'No specific remedies documented.'}</ReactMarkdown>
+                </div>
+              </section>
+
+              {result.cnnAnalysis && (
+                <section className="bg-sage-900 text-white p-8 rounded-3xl mt-8">
+                  <h3 className="text-xl font-bold mb-6 flex items-center gap-2"><LayoutGrid className="w-5 h-5"/> Neural AI Analysis</h3>
+                  <div className="grid grid-cols-2 gap-8">
+                    <div>
+                      <span className="block text-xs uppercase tracking-widest text-sage-400 mb-2">Confidence Score</span>
+                      <span className="text-4xl font-bold">{((result.cnnAnalysis.confidence || 0) * 100).toFixed(1)}%</span>
+                    </div>
+                    <div>
+                       <span className="block text-xs uppercase tracking-widest text-sage-400 mb-2">Extracted Markers</span>
+                       <div className="flex flex-wrap gap-2 text-sm text-sage-200">
+                         {result.cnnAnalysis.featuresIdentified?.map((f, i) => <span key={i} className="bg-white/10 px-2 py-1 rounded-md">{f}</span>)}
+                       </div>
+                    </div>
+                  </div>
+                </section>
+              )}
+            </div>
+            <div className="mt-12 pt-6 border-t border-sage-100 text-center text-xs text-sage-400 font-medium tracking-widest uppercase">
+              Generated by HerbalHeal Intelligence Engine • For Educational Purposes Only
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

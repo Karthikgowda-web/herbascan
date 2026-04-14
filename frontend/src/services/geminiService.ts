@@ -1,131 +1,57 @@
-import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export interface IdentificationResult {
   name: string;
-  scientificName: string;
-  description: string;
-  medicinalProperties: string[];
+  scientific_name: string;
+  overview: {
+    en: string;
+    hi: string;
+    kn: string;
+  };
   remedies: {
-    condition: string;
-    preparation: string;
-    expectedOutcome: string;
-  }[];
+    en: string;
+    hi: string;
+    kn: string;
+  };
   alternatives: {
-    name: string;
-    reason: string;
-  }[];
+    en: string[];
+    hi: string[];
+    kn: string[];
+  };
+  medicinalProperties: string[];
   warnings: string;
   cnnAnalysis: {
     confidence: number;
     featuresIdentified: string[];
     neuralMarkers: string;
   };
+  imageUrl?: string;
+  id?: string;
 }
 
 export async function identifyPlant(base64Image: string): Promise<IdentificationResult> {
-  const model = "gemini-3.1-pro-preview"; 
-  
-  const prompt = `Identify this herbal plant and provide detailed information for home remedies. 
-  As a botanical CNN (Convolutional Neural Network), perform a deep feature extraction and return the information in JSON format with the following structure:
-  {
-    "name": "Common Name",
-    "scientificName": "Scientific Name",
-    "description": "Brief description of the plant",
-    "medicinalProperties": ["Property 1", "Property 2"],
-    "remedies": [
-      { 
-        "condition": "Condition it treats", 
-        "preparation": "How to prepare the remedy",
-        "expectedOutcome": "What results to expect and when"
-      }
-    ],
-    "alternatives": [
-      { "name": "Alternative Plant Name", "reason": "Why this is a good alternative" }
-    ],
-    "warnings": "Safety warnings and contraindications",
-    "cnnAnalysis": {
-      "confidence": 0.95,
-      "featuresIdentified": ["serrated margins", "pinnate venation", "lanceolate shape"],
-      "neuralMarkers": "Description of the specific visual patterns the neural network used to identify this taxon."
-    }
-  }`;
-
-  const response = await ai.models.generateContent({
-    model: model,
-    contents: [
-      {
-        parts: [
-          { text: prompt },
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: base64Image.split(',')[1] || base64Image
-            }
-          }
-        ]
-      }
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          name: { type: Type.STRING },
-          scientificName: { type: Type.STRING },
-          description: { type: Type.STRING },
-          medicinalProperties: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING }
-          },
-          remedies: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                condition: { type: Type.STRING },
-                preparation: { type: Type.STRING },
-                expectedOutcome: { type: Type.STRING }
-              },
-              required: ["condition", "preparation", "expectedOutcome"]
-            }
-          },
-          alternatives: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                reason: { type: Type.STRING }
-              },
-              required: ["name", "reason"]
-            }
-          },
-          warnings: { type: Type.STRING },
-          cnnAnalysis: {
-            type: Type.OBJECT,
-            properties: {
-              confidence: { type: Type.NUMBER },
-              featuresIdentified: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
-              neuralMarkers: { type: Type.STRING }
-            },
-            required: ["confidence", "featuresIdentified", "neuralMarkers"]
-          }
-        },
-        required: ["name", "scientificName", "description", "medicinalProperties", "remedies", "alternatives", "warnings", "cnnAnalysis"]
-      }
-    }
-  });
-
   try {
-    return JSON.parse(response.text);
-  } catch (error) {
-    console.error("Failed to parse Gemini response:", response.text);
-    throw new Error("Failed to identify plant correctly.");
+    const res = await fetch(base64Image);
+    const blob = await res.blob();
+    
+    const formData = new FormData();
+    formData.append('image', blob, 'upload.jpg');
+
+    const response = await fetch('http://localhost:5000/api/identify', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Server error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data as IdentificationResult;
+  } catch (error: any) {
+    console.error("Identification Service Error:", error);
+    throw new Error(error.message || "Failed to identify plant correctly.");
   }
 }
 
@@ -138,47 +64,14 @@ export interface PlantSuggestion {
 }
 
 export async function suggestPlantsByIllness(illness: string): Promise<PlantSuggestion[]> {
-  const model = "gemini-3.1-pro-preview";
-  
-  const prompt = `Suggest herbal plants that can help with the following illness or condition: "${illness}". 
-  Provide a list of 3-5 plants.
-  Return the information in JSON format as an array of objects with the following structure:
-  [
+  console.log("Mocking search for:", illness);
+  return [
     {
-      "name": "Common Name",
-      "scientificName": "Scientific Name",
-      "description": "Brief description of the plant",
-      "howItHelps": "How it treats the specific condition",
-      "preparation": "How to prepare the remedy"
+      name: "Search coming soon to local AI",
+      scientificName: "Local.ai",
+      description: "Search logic is currently being migrated to the local Node.js backend.",
+      howItHelps: `Helps with ${illness} (Placeholder)`,
+      preparation: "Wait for next update."
     }
-  ]`;
-
-  const response = await ai.models.generateContent({
-    model: model,
-    contents: [{ parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            scientificName: { type: Type.STRING },
-            description: { type: Type.STRING },
-            howItHelps: { type: Type.STRING },
-            preparation: { type: Type.STRING }
-          },
-          required: ["name", "scientificName", "description", "howItHelps", "preparation"]
-        }
-      }
-    }
-  });
-
-  try {
-    return JSON.parse(response.text);
-  } catch (error) {
-    console.error("Failed to parse Gemini response:", response.text);
-    throw new Error("Failed to get plant suggestions.");
-  }
+  ];
 }

@@ -1,28 +1,41 @@
 import { IdentificationResult } from "./geminiService";
-
-const STORAGE_KEY = "herbal_plants_library";
+import axios from 'axios';
 
 export interface SavedPlant extends IdentificationResult {
-  id: string;
-  imageUrl: string;
+  _id: string; 
+  plant_name: string;
+  scientific_name: string;
+  image_url: string;
   createdAt: string;
 }
 
+const API_BASE_URL = 'http://localhost:5000/api';
+
 export async function savePlantToLibrary(result: IdentificationResult, base64Image: string) {
   try {
-    const savedPlants = await getSavedPlants();
     
-    const newPlant: SavedPlant = {
-      ...result,
-      id: crypto.randomUUID(),
-      imageUrl: base64Image, // Store base64 directly in localStorage for now (simple fallback)
-      createdAt: new Date().toISOString(),
-    };
+    const response = await axios.post(`${API_BASE_URL}/history`, {
+      plant_name: result.name,
+      scientific_name: result.scientific_name,
+      image_url: base64Image,
+      overview: result.overview,
+      remedies: result.remedies,
+      alternatives: result.alternatives,
+      medicinalProperties: result.medicinalProperties,
+      warnings: result.warnings,
+      cnnAnalysis: result.cnnAnalysis
+    });
 
-    const updatedLibrary = [newPlant, ...savedPlants];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+    
+    await axios.post(`${API_BASE_URL}/archive`, {
+      name: result.name || (result as any).plant_name || "Unknown",
+      scientificName: result.scientific_name || "Unknown",
+      imageUrl: base64Image,
+      remedies: result.remedies,
+      timestamp: new Date().toISOString()
+    });
 
-    return newPlant.id;
+    return response.data._id;
   } catch (error) {
     console.error("Error saving plant to library:", error);
     throw error;
@@ -31,12 +44,8 @@ export async function savePlantToLibrary(result: IdentificationResult, base64Ima
 
 export async function getSavedPlants(): Promise<SavedPlant[]> {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) return [];
-    
-    const plants = JSON.parse(data) as SavedPlant[];
-    // Sort by date descending
-    return plants.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const response = await axios.get(`${API_BASE_URL}/history`);
+    return response.data;
   } catch (error) {
     console.error("Error fetching saved plants:", error);
     return [];
@@ -44,12 +53,6 @@ export async function getSavedPlants(): Promise<SavedPlant[]> {
 }
 
 export async function deletePlantFromLibrary(id: string) {
-  try {
-    const savedPlants = await getSavedPlants();
-    const updatedLibrary = savedPlants.filter(p => p.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
-  } catch (error) {
-    console.error("Error deleting plant:", error);
-    throw error;
-  }
+  
+  console.warn("Delete not implemented for MongoDB yet.");
 }

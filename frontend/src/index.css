@@ -38,6 +38,12 @@ body {
   @apply bg-sage-50 text-sage-900 font-sans antialiased;
 }
 
+@media all and (display-mode: standalone) {
+  body {
+    padding-top: 20px;
+  }
+}
+
 .serif {
   @apply font-serif;
 }

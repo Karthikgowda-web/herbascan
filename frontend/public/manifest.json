@@ -1,0 +1,23 @@
+{
+  "name": "HerbalHeal Identification System",
+  "short_name": "HerbalHeal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f4",
+  "theme_color": "#5a7d5a",
+  "description": "Premium botanical intelligence and traditional remedy references.",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
