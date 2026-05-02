@@ -56,6 +56,9 @@ app.get('/', (req, res) => {
     res.send('HerbaScan Backend is running!');
 });
 
+// Authentication Routes
+app.use('/api/auth', require('./routes/auth'));
+
 app.post('/api/identify', upload.single('image'), (req, res) => {
     if (!req.file) {
         return res.status(400).send({ message: 'No file uploaded' });
