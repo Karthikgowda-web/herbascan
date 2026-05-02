@@ -1,4 +1,4 @@
-
+// Google Generative AI has been unlinked. We now use the local HerbaScan MERN Backend.
 
 export interface IdentificationResult {
   name: string;
@@ -37,7 +37,8 @@ export async function identifyPlant(base64Image: string): Promise<Identification
     const formData = new FormData();
     formData.append('image', blob, 'upload.jpg');
 
-    const response = await fetch('http://localhost:5000/api/identify', {
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const response = await fetch(`${API_URL}/api/identify`, {
       method: 'POST',
       body: formData,
     });
