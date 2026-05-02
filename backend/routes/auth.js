@@ -2,10 +2,10 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const Admin = require('../models/Admin');
+const User = require('../models/User');
 
 // @route   POST /api/auth/register
-// @desc    Register a new admin account
+// @desc    Register a new standard user account
 // @access  Public
 router.post('/register', async (req, res) => {
     const { name, email, password } = req.body;
@@ -16,14 +16,14 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ message: 'Please enter all fields (name, email, password).' });
         }
 
-        // Check for existing admin
-        let admin = await Admin.findOne({ email });
-        if (admin) {
-            return res.status(400).json({ message: 'Admin account already exists with this email.' });
+        // Check for existing user
+        let user = await User.findOne({ email });
+        if (user) {
+            return res.status(400).json({ message: 'Account already exists with this email.' });
         }
 
-        // Create new admin
-        admin = new Admin({
+        // Create new user
+        user = new User({
             name,
             email,
             password
@@ -31,15 +31,15 @@ router.post('/register', async (req, res) => {
 
         // Hash password
         const salt = await bcrypt.genSalt(10);
-        admin.password = await bcrypt.hash(password, salt);
+        user.password = await bcrypt.hash(password, salt);
 
         // Save to database
-        await admin.save();
+        await user.save();
 
         // Create JWT token
         const payload = {
-            admin: {
-                id: admin.id
+            user: {
+                id: user.id
             }
         };
 
@@ -52,26 +52,26 @@ router.post('/register', async (req, res) => {
             (err, token) => {
                 if (err) throw err;
                 res.status(201).json({
-                    message: 'Admin account created successfully.',
+                    message: 'Account created successfully.',
                     token,
-                    admin: {
-                        id: admin.id,
-                        name: admin.name,
-                        email: admin.email,
-                        role: admin.role
+                    user: {
+                        id: user.id,
+                        name: user.name,
+                        email: user.email,
+                        role: user.role
                     }
                 });
             }
         );
 
     } catch (err) {
-        console.error("Error creating admin account:", err.message);
+        console.error("Error creating user account:", err.message);
         res.status(500).json({ message: 'Server error while creating account.' });
     }
 });
 
 // @route   POST /api/auth/login
-// @desc    Login admin account
+// @desc    Login user account
 // @access  Public
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -81,19 +81,19 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ message: 'Please enter all fields.' });
         }
 
-        const admin = await Admin.findOne({ email });
-        if (!admin) {
+        const user = await User.findOne({ email });
+        if (!user) {
             return res.status(400).json({ message: 'Invalid credentials.' });
         }
 
-        const isMatch = await bcrypt.compare(password, admin.password);
+        const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             return res.status(400).json({ message: 'Invalid credentials.' });
         }
 
         const payload = {
-            admin: {
-                id: admin.id
+            user: {
+                id: user.id
             }
         };
 
@@ -108,11 +108,11 @@ router.post('/login', async (req, res) => {
                 res.json({
                     message: 'Logged in successfully.',
                     token,
-                    admin: {
-                        id: admin.id,
-                        name: admin.name,
-                        email: admin.email,
-                        role: admin.role
+                    user: {
+                        id: user.id,
+                        name: user.name,
+                        email: user.email,
+                        role: user.role
                     }
                 });
             }

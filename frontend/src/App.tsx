@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, X, Leaf, Info, AlertTriangle, Loader2, Download, Share2, FileText, Image as ImageIcon, Bookmark, BookmarkCheck, LayoutGrid } from 'lucide-react';
+import { Camera, Upload, X, Leaf, Info, AlertTriangle, Loader2, Download, Share2, FileText, Image as ImageIcon, Bookmark, BookmarkCheck, LayoutGrid, User, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import html2canvas from 'html2canvas';
@@ -47,6 +47,59 @@ export default function App() {
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi' | 'kn'>('en');
 
   const [toastMsg, setToastMsg] = useState<{ message: string, visible: boolean }>({ message: '', visible: false });
+
+  // Authentication State
+  const [user, setUser] = useState<{name: string, email: string, token: string} | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authLoading, setAuthLoading] = useState(false);
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('herbascan_user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+  }, []);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    try {
+      const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+      
+      const payload = isLoginMode 
+        ? { email: authForm.email, password: authForm.password }
+        : authForm;
+
+      const response = await fetch(`${API_BASE_URL.replace('/api', '')}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) throw new Error(data.message || 'Authentication failed');
+
+      const userData = { name: data.user.name, email: data.user.email, token: data.token };
+      setUser(userData);
+      localStorage.setItem('herbascan_user', JSON.stringify(userData));
+      setShowAuthModal(false);
+      showToast(`Welcome back, ${data.user.name}!`);
+    } catch (err: any) {
+      showToast(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('herbascan_user');
+    showToast('Logged out successfully');
+  };
 
   const showToast = (message: string) => {
     setToastMsg({ message, visible: true });
@@ -295,6 +348,94 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Auth Modal */}
+      <AnimatePresence>
+        {showAuthModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-sage-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white w-full max-w-md p-8 rounded-[2rem] shadow-2xl relative"
+            >
+              <button 
+                onClick={() => setShowAuthModal(false)}
+                className="absolute top-6 right-6 text-sage-400 hover:text-sage-900 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              
+              <div className="mb-8">
+                <div className="w-12 h-12 bg-sage-100 rounded-2xl flex items-center justify-center mb-4">
+                  <User className="w-6 h-6 text-sage-900" />
+                </div>
+                <h2 className="text-3xl font-serif font-bold text-sage-900">
+                  {isLoginMode ? 'Welcome Back' : 'Create Account'}
+                </h2>
+                <p className="text-sage-500 mt-1">
+                  {isLoginMode ? 'Sign in to access your saved botanical library.' : 'Join to save plants and sync your herbal discoveries.'}
+                </p>
+              </div>
+
+              <form onSubmit={handleAuth} className="space-y-4">
+                {!isLoginMode && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-sage-500 mb-2">Full Name</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={authForm.name}
+                      onChange={e => setAuthForm({...authForm, name: e.target.value})}
+                      className="w-full px-4 py-3 bg-sage-50 border border-sage-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-900/20"
+                      placeholder="Jane Doe"
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-sage-500 mb-2">Email Address</label>
+                  <input 
+                    type="email" 
+                    required 
+                    value={authForm.email}
+                    onChange={e => setAuthForm({...authForm, email: e.target.value})}
+                    className="w-full px-4 py-3 bg-sage-50 border border-sage-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-900/20"
+                    placeholder="jane@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-sage-500 mb-2">Password</label>
+                  <input 
+                    type="password" 
+                    required 
+                    value={authForm.password}
+                    onChange={e => setAuthForm({...authForm, password: e.target.value})}
+                    className="w-full px-4 py-3 bg-sage-50 border border-sage-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-900/20"
+                    placeholder="••••••••"
+                  />
+                </div>
+                
+                <button 
+                  type="submit" 
+                  disabled={authLoading}
+                  className="w-full py-4 mt-4 bg-sage-900 text-white rounded-xl font-bold hover:bg-sage-800 transition-colors flex items-center justify-center gap-2"
+                >
+                  {authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                  {isLoginMode ? 'Sign In' : 'Create Account'}
+                </button>
+              </form>
+
+              <div className="mt-6 text-center">
+                <button 
+                  onClick={() => setIsLoginMode(!isLoginMode)}
+                  className="text-sage-500 text-sm font-medium hover:text-sage-900"
+                >
+                  {isLoginMode ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
       {}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-sage-200/30 blur-[120px] rounded-full animate-float" />
@@ -381,6 +522,25 @@ export default function App() {
               >
                 <Download className="w-3.5 h-3.5" />
                 Install App
+              </button>
+            )}
+
+            {user ? (
+              <div className="flex items-center gap-2 ml-2 pl-3 border-l border-sage-200/50">
+                <div className="w-8 h-8 bg-sage-200 rounded-full flex items-center justify-center text-sage-900 font-bold text-xs uppercase">
+                  {user.name.charAt(0)}
+                </div>
+                <button onClick={handleLogout} className="p-2 text-sage-400 hover:text-red-500 transition-colors" title="Logout">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAuthModal(true)}
+                className="ml-2 px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 bg-sage-100 text-sage-900 hover:bg-sage-200"
+              >
+                <User className="w-3.5 h-3.5" />
+                Sign In
               </button>
             )}
           </nav>
